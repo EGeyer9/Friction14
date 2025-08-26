@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Inclined Plane — Max Friction Demo</title>
+<title>Triangle Rigidity</title>
 <style>
   body{font-family:Arial,sans-serif;text-align:center;margin:10px;color:#111}
   input[type=number]{width:80px;padding:5px;border-radius:5px;border:1px solid #ccc}
@@ -13,7 +13,7 @@
 </head>
 <body>
 
-<h2>Inclined Plane (Max Friction Force)</h2>
+<h2>Triangle Rigidity</h2>
 <div>
   <label>Friction max (N): <input id="Fmax" type="number" value="50" step="1"></label>
   <button id="toggleFric">Friction: ON</button>
@@ -67,10 +67,10 @@ function posToCanvas(s){
         x: topLeftPx.x + t_down.x*s*pixelsPerMeter,
         y: topLeftPx.y + t_down.y*s*pixelsPerMeter
     };
-    // Place box on top of ramp
+    // Place box so its bottom corner touches the ramp line
     return {
-        x: base.x + n.x*boxSizeM*pixelsPerMeter/2,
-        y: base.y + n.y*boxSizeM*pixelsPerMeter/2
+        x: base.x - n.x*boxSizeM*pixelsPerMeter/2,
+        y: base.y - n.y*boxSizeM*pixelsPerMeter/2
     };
 }
 
@@ -79,20 +79,20 @@ function drawRamp(){
     const top = topLeftPx;
     const bottom = rampBottomPx();
 
-    // Draw incline line
+    // Grey baseline (full canvas width)
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, bottom.y);
+    ctx.lineTo(canvas.width, bottom.y);
+    ctx.stroke();
+
+    // Incline line
     ctx.strokeStyle = "#ff9f1c";
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(top.x, top.y);
     ctx.lineTo(bottom.x, bottom.y);
-    ctx.stroke();
-
-    // Draw baseline for reference
-    ctx.strokeStyle = "#999";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(bottom.x, bottom.y);
-    ctx.lineTo(bottom.x + 200, bottom.y);
     ctx.stroke();
 }
 
@@ -117,13 +117,17 @@ function physicsStep(dt){
             netF = F_down - friction;
             a = netF/mass;
             v += a*dt;
-            if(v*(v-a*dt)<0)v=0;
             s_m += v*dt;
-            s_m = Math.max(0, Math.min(rampLengthM,s_m));
+            // Clamp motion
+            if(s_m >= rampLengthM){ s_m=rampLengthM; v=0; a=0; }
+            if(s_m <= 0){ s_m=0; v=0; a=0; }
             state='sliding';
         }
     } else {
-        netF = F_down; a=netF/mass; v+=a*dt; s_m+=v*dt; s_m = Math.min(rampLengthM, Math.max(0,s_m)); state='no friction';
+        netF = F_down; a=netF/mass; v+=a*dt; s_m+=v*dt;
+        if(s_m >= rampLengthM){ s_m=rampLengthM; v=0; a=0; }
+        if(s_m <= 0){ s_m=0; v=0; a=0; }
+        state='no friction';
     }
     return {F_down, netF, state};
 }
