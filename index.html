@@ -1,7 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
   <title>Friction Simulation</title>
   <style>
     canvas {
@@ -10,230 +9,174 @@
       margin: 20px auto;
       background: #f9f9f9;
     }
-    #controls {
+    .controls {
       text-align: center;
       margin-bottom: 10px;
     }
     button {
-      margin-left: 5px;
+      margin: 0 5px;
       padding: 5px 10px;
-      border: none;
       border-radius: 6px;
-      background-color: #007bff;
-      color: white;
+      border: none;
       cursor: pointer;
     }
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
+    .toggle-btn {
+      background-color: #007bff;
+      color: white;
     }
-    input {
-      margin-left: 5px;
+    .toggle-btn:disabled {
+      background-color: #999;
+      cursor: not-allowed;
+    }
+    .reset-btn {
+      background-color: #007bff;
+      color: white;
     }
   </style>
 </head>
 <body>
-  <div id="controls">
-    Friction max (N): <input type="number" id="fmax" value="50" />
-    <button id="frictionBtn">Friction: OFF</button>
-    <button id="pauseBtn">Pause</button>
+  <div class="controls">
+    Friction max (N): <input type="number" id="frictionInput" value="50" style="width:60px;">
+    <button id="frictionBtn" class="toggle-btn">Friction: OFF</button>
     <button id="resumeBtn">Resume</button>
-    <button id="resetBtn">Reset</button>
+    <button id="resetBtn" class="reset-btn">Reset</button>
+    <button id="pauseBtn">Pause</button>
   </div>
-  <canvas id="simCanvas" width="800" height="500"></canvas>
-  <div id="info" style="text-align:center; margin-top:10px;"></div>
-
+  <canvas id="canvas" width="800" height="500"></canvas>
   <script>
-    const canvas = document.getElementById("simCanvas");
+    const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
 
-    // Controls
-    const fmaxInput = document.getElementById("fmax");
-    const frictionBtn = document.getElementById("frictionBtn");
-    const pauseBtn = document.getElementById("pauseBtn");
-    const resumeBtn = document.getElementById("resumeBtn");
-    const resetBtn = document.getElementById("resetBtn");
+    const rampAngle = 30 * Math.PI / 180;
+    const rampLength = 400;
+    const blockSize = 30;
+    const mass = 10;
+    const g = 9.8;
 
-    // Simulation parameters
-    const mass = 10; // kg
-    const g = 9.81; // m/s²
-    const angle = 30 * Math.PI / 180; // radians
-    let fmax = parseFloat(fmaxInput.value);
-    let frictionOn = false;
+    let frictionMax = parseFloat(document.getElementById("frictionInput").value);
+    let useFriction = false;
+    let paused = true;
 
-    let s = 0; // displacement along ramp (m)
-    let v = 0; // velocity (m/s)
-    let a = 0; // acceleration (m/s²)
+    let s = 0, v = 0, a = 0;
+    let blockMoving = false;
 
-    const rampLength = 5; // meters
-    const pixelsPerMeter = 80;
+    const rampBaseX = 500;
+    const rampBaseY = 400;
 
-    let running = false;
-    let paused = false;
+    document.getElementById("frictionInput").addEventListener("change", () => {
+      frictionMax = parseFloat(document.getElementById("frictionInput").value);
+    });
 
-    // Buttons
-    frictionBtn.onclick = () => {
-      if (frictionBtn.disabled) return;
-      frictionOn = !frictionOn;
-      frictionBtn.textContent = "Friction: " + (frictionOn ? "ON" : "OFF");
-    };
+    document.getElementById("frictionBtn").addEventListener("click", () => {
+      useFriction = !useFriction;
+      document.getElementById("frictionBtn").textContent = "Friction: " + (useFriction ? "ON" : "OFF");
+    });
 
-    pauseBtn.onclick = () => {
+    document.getElementById("resumeBtn").addEventListener("click", () => {
+      paused = false;
+    });
+
+    document.getElementById("pauseBtn").addEventListener("click", () => {
       paused = true;
-    };
+    });
 
-    resumeBtn.onclick = () => {
-      paused = false;
-      running = true;
-    };
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      s = 0; v = 0; a = 0;
+      paused = true;
+      blockMoving = false;
+      document.getElementById("frictionBtn").disabled = false;
+    });
 
-    resetBtn.onclick = () => {
-      s = 0;
-      v = 0;
-      a = 0;
-      paused = false;
-      running = false;
-      frictionBtn.disabled = false;
-      frictionBtn.style.opacity = 1;
-      draw();
-      updateInfo();
-    };
-
-    fmaxInput.onchange = () => {
-      fmax = parseFloat(fmaxInput.value);
-    };
-
-    function update(dt) {
-      if (paused) return;
-      running = true;
-
-      const downslopeForce = mass * g * Math.sin(angle);
-      const normalForce = mass * g * Math.cos(angle);
-
-      let frictionForce = 0;
-      if (frictionOn) {
-        frictionForce = Math.min(fmax, normalForce);
-      }
-
-      let netForce = downslopeForce;
-      if (v > 0 || (!running && downslopeForce > frictionForce)) {
-        netForce -= frictionForce;
-      }
-
-      a = netForce / mass;
-
-      // Stop condition
-      if (Math.abs(downslopeForce) <= frictionForce && Math.abs(v) < 0.001) {
-        a = 0;
-        v = 0;
-        running = false;
-      } else {
-        v += a * dt;
-        s += v * dt;
-        if (s >= rampLength) {
-          s = rampLength;
-          v = 0;
-          a = 0;
-          running = false;
-        }
-      }
-
-      // Disable friction button if moving
-      if (Math.abs(v) > 0.0001) {
-        frictionBtn.disabled = true;
-        frictionBtn.style.opacity = 0.5;
-      } else {
-        frictionBtn.disabled = false;
-        frictionBtn.style.opacity = 1;
-      }
+    function drawGround() {
+      ctx.beginPath();
+      ctx.moveTo(0, rampBaseY);
+      ctx.lineTo(canvas.width, rampBaseY);
+      ctx.strokeStyle = "gray";
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
 
     function drawRamp() {
-      const baseX = 200, baseY = 400;
-      const rampX = baseX + rampLength * Math.cos(angle) * pixelsPerMeter;
-      const rampY = baseY - rampLength * Math.sin(angle) * pixelsPerMeter;
+      const x1 = rampBaseX;
+      const y1 = rampBaseY;
+      const x2 = rampBaseX - rampLength * Math.cos(rampAngle);
+      const y2 = rampBaseY - rampLength * Math.sin(rampAngle);
 
-      // Floor line
-      ctx.strokeStyle = "gray";
-      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(0, baseY);
-      ctx.lineTo(canvas.width, baseY);
-      ctx.stroke();
-
-      // Ramp line
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
       ctx.strokeStyle = "orange";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(baseX, baseY);
-      ctx.lineTo(rampX, rampY);
+      ctx.lineWidth = 4;
       ctx.stroke();
 
-      // Draw angle arc
       ctx.beginPath();
+      ctx.moveTo(rampBaseX + 60, rampBaseY);
+      ctx.arc(rampBaseX, rampBaseY, 60, Math.PI * 1.5, Math.PI * 1.5 + rampAngle, false);
       ctx.strokeStyle = "black";
-      ctx.lineWidth = 1.5;
-      ctx.arc(baseX, baseY, 40, -angle, 0, false);
       ctx.stroke();
+      ctx.fillText("30°", rampBaseX + 30, rampBaseY - 10);
 
-      // Angle label
-      ctx.font = "16px Arial";
-      ctx.fillStyle = "black";
-      ctx.fillText("30°", baseX + 45, baseY - 5);
-
-      return { baseX, baseY, rampX, rampY };
+      return {x1, y1, x2, y2};
     }
 
-    function drawBlock(ramp) {
-      const { baseX, baseY } = ramp;
-      const blockSize = 20;
-
-      const x = baseX + s * Math.cos(angle) * pixelsPerMeter;
-      const y = baseY - s * Math.sin(angle) * pixelsPerMeter;
+    function drawBlock(ramp, s) {
+      const dx = Math.cos(rampAngle);
+      const dy = Math.sin(rampAngle);
+      const bx = ramp.x2 + s * dx;
+      const by = ramp.y2 + s * dy;
 
       ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(-angle);
+      ctx.translate(bx, by);
+      ctx.rotate(-rampAngle);
       ctx.fillStyle = "blue";
       ctx.fillRect(-blockSize/2, -blockSize/2, blockSize, blockSize);
       ctx.restore();
     }
 
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function updatePhysics() {
+      const Fg = mass * g * Math.sin(rampAngle);
+      const Ff = useFriction ? Math.min(frictionMax, mass * g * Math.cos(rampAngle)) : 0;
+      const Fnet = Fg - Ff;
+
+      if (Math.abs(Fnet) < 0.0001 && v === 0) {
+        a = 0;
+        blockMoving = false;
+      } else {
+        a = Fnet / mass;
+        blockMoving = true;
+      }
+
+      if (!paused) {
+        v += a * 0.05;
+        s += v * 0.05;
+        if (s < 0) { s = 0; v = 0; a = 0; blockMoving = false; }
+      }
+
+      // disable friction button only if block is moving
+      document.getElementById("frictionBtn").disabled = blockMoving;
+    }
+
+    function loop() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      drawGround();
       const ramp = drawRamp();
-      drawBlock(ramp);
+      drawBlock(ramp, s);
 
-      // Text info
-      ctx.font = "16px Arial";
       ctx.fillStyle = "black";
-      ctx.fillText(`Mass = ${mass} kg`, 600, 100);
-      ctx.fillText(`Angle = 30°`, 600, 120);
-    }
+      ctx.fillText(`Mass = ${mass} kg`, 600, 50);
+      ctx.fillText(`Angle = 30°`, 600, 70);
+      ctx.fillText(`s = ${s.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${paused ? "paused" : "running"}`, 150, 480);
 
-    function updateInfo() {
-      document.getElementById("info").textContent =
-        `s = ${s.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${paused ? "paused" : (running ? "running" : "stopped")}`;
-    }
-
-    let lastTime = null;
-    function loop(timestamp) {
-      if (lastTime === null) lastTime = timestamp;
-      const dt = (timestamp - lastTime) / 1000;
-      lastTime = timestamp;
-
-      if (running) update(dt);
-      draw();
-      updateInfo();
-
+      updatePhysics();
       requestAnimationFrame(loop);
     }
 
-    resetBtn.click();
-    requestAnimationFrame(loop);
+    loop();
   </script>
 </body>
 </html>
+
 
 
 
