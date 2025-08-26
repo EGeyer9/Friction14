@@ -6,7 +6,7 @@
 <style>
   body{font-family:Arial,sans-serif;text-align:center;margin:10px;color:#111}
   input[type=number]{width:80px;padding:5px;border-radius:5px;border:1px solid #ccc}
-  button{padding:5px 10px;margin-left:5px;border-radius:5px;border:none;background:#2b7be4;color:white}
+  button{padding:5px 10px;margin-left:5px;border-radius:5px;border:none;background:#2b7be4;color:white;cursor:pointer}
   canvas{border:1px solid #ccc;display:block;margin:10px auto;background:#fff}
   .small{font-size:13px;color:#444;margin-top:6px}
 </style>
@@ -17,6 +17,7 @@
 <div>
   <label>Friction max (N): <input id="Fmax" type="number" value="50" step="1"></label>
   <button id="toggleFric">Friction: ON</button>
+  <button id="pauseBtn">Pause</button>
   <button id="reset">Reset</button>
 </div>
 <canvas id="cv" width="900" height="500"></canvas>
@@ -38,7 +39,8 @@ const pixelsPerMeter = 80;
 // State
 let F_max = parseFloat(document.getElementById('Fmax').value);
 let frictionOn = true;
-let s_m = 0; // start at top
+let paused = false;
+let s_m = 0;
 let v = 0;
 let a = 0;
 
@@ -53,11 +55,16 @@ const nMag = Math.hypot(n.x,n.y); n.x/=nMag; n.y/=nMag;
 // UI
 const FmaxEl = document.getElementById('Fmax');
 const toggleFricBtn = document.getElementById('toggleFric');
+const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('reset');
 const infoEl = document.getElementById('info');
 
 FmaxEl.addEventListener('input', ()=>{F_max = Math.max(0,parseFloat(FmaxEl.value)||0);});
 toggleFricBtn.addEventListener('click',()=>{frictionOn=!frictionOn; toggleFricBtn.textContent='Friction: '+(frictionOn?'ON':'OFF');});
+pauseBtn.addEventListener('click',()=>{
+  paused = !paused;
+  pauseBtn.textContent = paused ? "Resume" : "Pause";
+});
 resetBtn.addEventListener('click',init);
 
 // Helpers
@@ -67,7 +74,6 @@ function posToCanvas(s){
         x: topLeftPx.x + t_down.x*s*pixelsPerMeter,
         y: topLeftPx.y + t_down.y*s*pixelsPerMeter
     };
-    // Place box so its bottom corner touches the ramp line
     return {
         x: base.x - n.x*boxSizeM*pixelsPerMeter/2,
         y: base.y - n.y*boxSizeM*pixelsPerMeter/2
@@ -79,7 +85,7 @@ function drawRamp(){
     const top = topLeftPx;
     const bottom = rampBottomPx();
 
-    // Grey baseline (full canvas width)
+    // Grey baseline
     ctx.strokeStyle = "#999";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -118,7 +124,6 @@ function physicsStep(dt){
             a = netF/mass;
             v += a*dt;
             s_m += v*dt;
-            // Clamp motion
             if(s_m >= rampLengthM){ s_m=rampLengthM; v=0; a=0; }
             if(s_m <= 0){ s_m=0; v=0; a=0; }
             state='sliding';
@@ -138,7 +143,9 @@ function renderLoop(ts){
     if(!lastT) lastT=ts;
     const dt = Math.min(0.03,(ts-lastT)/1000); lastT=ts;
 
-    const forces = physicsStep(dt);
+    if(!paused){
+        var forces = physicsStep(dt);
+    }
 
     ctx.clearRect(0,0,canvas.width,canvas.height);
     drawRamp();
@@ -146,17 +153,18 @@ function renderLoop(ts){
 
     ctx.font='14px Arial'; ctx.fillStyle='#111';
     ctx.fillText(`Mass = ${mass} kg`,680,40);
-    ctx.fillText(`Angle = ${angleDeg}°`,680,64);
-    ctx.fillText(`F_max = ${F_max.toFixed(1)} N`,680,88);
-    infoEl.textContent = `s = ${s_m.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${forces.state}`;
+    ctx.fillText(`Angle = ${angleDeg}\u00B0`,680,64);
+
+    infoEl.textContent = `s = ${s_m.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${forces?forces.state:"paused"}`;
 
     requestAnimationFrame(renderLoop);
 }
 
 // Init
-function init(){s_m=0; v=0; a=0; F_max = Math.max(0,parseFloat(FmaxEl.value)||50);}
+function init(){s_m=0; v=0; a=0; paused=false; pauseBtn.textContent="Pause"; F_max = Math.max(0,parseFloat(FmaxEl.value)||50);}
 init();
 requestAnimationFrame(renderLoop);
 </script>
 </body>
 </html>
+
