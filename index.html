@@ -27,45 +27,57 @@
 const canvas = document.getElementById('cv');
 const ctx = canvas.getContext('2d');
 
-// ----- Parameters -----
+// Constants (down-slope is positive)
 const g = 9.81;
 const mass = 10;                 // kg
-const angleDeg = 30;             // incline angle (display)
+const angleDeg = 30;             // incline angle
 const theta = angleDeg*Math.PI/180;
 const boxSizeM = 0.30;           // m (edge length of square)
 const rampLengthM = 5;           // m (measured along the ramp)
 const pixelsPerMeter = 80;
 
-// ----- State -----
-let F_max = parseFloat(document.getElementById('Fmax').value); // N
+// State
+let F_max = parseFloat(document.getElementById('Fmax').value); // N (cap on friction magnitude)
 let frictionOn = true;
 let paused = false;
 
+// Kinematics along the ramp
 let s_m = 0;   // position along ramp (m), 0 = top, rampLengthM = bottom
 let v = 0;     // m/s (down-slope positive)
 let a = 0;     // m/s^2
 
-// ----- Geometry -----
+// Ramp geometry
 const rampBottomY = 450;
 const rampHeightPx = Math.sin(theta)*rampLengthM*pixelsPerMeter;
 const topLeftPx = {x:100, y:rampBottomY - rampHeightPx};
 const t_down = {x: Math.cos(theta), y: Math.sin(theta)};   // unit along ramp (downwards)
-let n = {x:-t_down.y, y:t_down.x};                         // surface normal (points 'up' from surface)
+let n = {x:-t_down.y, y:t_down.x};                         // unit normal (points “up” from surface)
 const nMag = Math.hypot(n.x,n.y); n.x/=nMag; n.y/=nMag;
 
-// ----- UI -----
+// UI elements
 const FmaxEl = document.getElementById('Fmax');
 const toggleFricBtn = document.getElementById('toggleFric');
 const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('reset');
 const infoEl = document.getElementById('info');
 
-FmaxEl.addEventListener('input', ()=>{ F_max = Math.max(0, parseFloat(FmaxEl.value) || 0); });
-toggleFricBtn.addEventListener('click', ()=>{ frictionOn = !frictionOn; toggleFricBtn.textContent = 'Friction: ' + (frictionOn ? 'ON' : 'OFF'); });
-pauseBtn.addEventListener('click', ()=>{ paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; });
+FmaxEl.addEventListener('input', ()=>{
+  F_max = Math.max(0, parseFloat(FmaxEl.value) || 0);
+});
+
+toggleFricBtn.addEventListener('click', ()=>{
+  frictionOn = !frictionOn;
+  toggleFricBtn.textContent = 'Friction: ' + (frictionOn ? 'ON' : 'OFF');
+});
+
+pauseBtn.addEventListener('click', ()=>{
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+});
+
 resetBtn.addEventListener('click', init);
 
-// ----- Helpers -----
+// Helpers
 function rampBottomPx(){
   return {
     x: topLeftPx.x + t_down.x*rampLengthM*pixelsPerMeter,
@@ -73,25 +85,27 @@ function rampBottomPx(){
   };
 }
 
-// Map position along ramp (m) -> center of box on canvas so the box's lower face touches the ramp
+// Return the canvas-space center position of the box such that its
+// lower face *touches* the ramp line (box rides ON the line).
 function posToCanvas(s){
+  // point on the ramp line at arc-length s
   const base = {
     x: topLeftPx.x + t_down.x*s*pixelsPerMeter,
     y: topLeftPx.y + t_down.y*s*pixelsPerMeter
   };
-  // SHIFT *ALONG THE NORMAL OUTWARD* so the box rides *on top* of the ramp
+  // shift the box center outward along the surface normal by half the box size
   return {
-    x: base.x + n.x*boxSizeM*pixelsPerMeter/2,
-    y: base.y + n.y*boxSizeM*pixelsPerMeter/2
+    x: base.x - n.x*boxSizeM*pixelsPerMeter/2,
+    y: base.y - n.y*boxSizeM*pixelsPerMeter/2
   };
 }
 
-// ----- Drawing -----
+// Drawing
 function drawRamp(){
   const top = topLeftPx;
   const bottom = rampBottomPx();
 
-  // grey floor line across full canvas
+  // Grey baseline across entire canvas
   ctx.strokeStyle = '#999';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -99,7 +113,7 @@ function drawRamp(){
   ctx.lineTo(canvas.width, bottom.y);
   ctx.stroke();
 
-  // incline orange line (single sloped face)
+  // Orange incline line
   ctx.strokeStyle = '#ff9f1c';
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -107,20 +121,43 @@ function drawRamp(){
   ctx.lineTo(bottom.x, bottom.y);
   ctx.stroke();
 
-  // draw angle arc between floor and ramp at the bottom corner
+  // --- correct angle arc & centered label between ramp and floor ---
+  // floor vector (pointing left from the corner) and ramp vector (pointing to top from corner)
+  const floorVec = { x: -1, y: 0 };
+  const rampVec = { x: top.x - bottom.x, y: top.y - bottom.y };
+
+  // compute angles in canvas coordinates (atan2 uses same y-direction)
+  function normAngle(a){
+    while (a < 0) a += Math.PI*2;
+    while (a >= Math.PI*2) a -= Math.PI*2;
+    return a;
+  }
+  const angleFloor = normAngle(Math.atan2(floorVec.y, floorVec.x));
+  const angleRamp  = normAngle(Math.atan2(rampVec.y,  rampVec.x));
+  // choose the small arc between them
+  let startA = angleFloor;
+  let endA = angleRamp;
+  let delta = (endA - startA + Math.PI*2) % (Math.PI*2);
+  if (delta > Math.PI) {
+    // swap so we draw the smaller arc
+    startA = angleRamp;
+    endA = angleFloor;
+    delta = (endA - startA + Math.PI*2) % (Math.PI*2);
+  }
+
   const arcRadius = 40;
-  // draw arc from horizontal (0) to ramp direction (-theta) — small arc above the floor
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(bottom.x, bottom.y, arcRadius, 0, -theta, true);
+  ctx.arc(bottom.x, bottom.y, arcRadius, startA, endA, false);
   ctx.stroke();
 
-  // place the label centered over the arc
-  const midAngle = -theta/2; // halfway between 0 and -theta
+  // label at middle of arc
+  const midA = (startA + delta/2);
   const labelRadius = arcRadius + 12;
-  const lx = bottom.x + labelRadius*Math.cos(midAngle);
-  const ly = bottom.y + labelRadius*Math.sin(midAngle);
+  const lx = bottom.x + labelRadius * Math.cos(midA);
+  const ly = bottom.y + labelRadius * Math.sin(midA);
+
   ctx.fillStyle = '#000';
   ctx.font = '14px Arial';
   ctx.textAlign = 'center';
@@ -142,71 +179,75 @@ function drawBox(pos){
   ctx.restore();
 }
 
-// ----- Physics (stick-slip, capped friction) -----
+// Physics (accurate stick–slip with capped friction)
 function physicsStep(dt){
-  const F_down = mass * g * Math.sin(theta);  // gravity component down the ramp
-  let state = '';
+  const F_down = mass*g*Math.sin(theta);  // component of gravity along ramp (positive down-slope)
+  let state;
 
   if (!frictionOn) {
-    // no friction: constant down-slope acceleration
+    // No friction: constant down-slope force
     a = F_down / mass;
-    v += a * dt;
-    s_m += v * dt;
+    v += a*dt;
+    s_m += v*dt;
     state = 'no friction';
   } else {
-    // friction exists, magnitude capped at F_max
+    // Friction limited to |F_fric| <= F_max, opposite motion or opposing would-be motion
     if (Math.abs(v) < 1e-8) {
-      // candidate for static friction
+      // Candidate for static friction
       if (F_down <= F_max) {
-        // static friction balances gravity -> stays
+        // Static friction balances gravity: stays put
         a = 0; v = 0;
         state = 'static (stays)';
       } else {
-        // breakaway: sliding down
-        const F_fric = F_max; // up-slope
-        const netF = F_down - F_fric; // > 0
+        // Breakaway: sliding begins down-slope
+        const F_fric = F_max;            // opposes motion (up-slope)
+        const netF = F_down - F_fric;    // remains positive
         a = netF / mass;
-        v += a * dt;
-        s_m += v * dt;
+        v += a*dt;
+        s_m += v*dt;
         state = 'sliding';
       }
     } else {
-      // currently sliding
-      const F_fric = F_max * Math.sign(v); // opposes motion
+      // Currently sliding
+      const F_fric = F_max * Math.sign(v); // opposes current motion
       const netF = F_down - F_fric;
       const v_prev = v;
-      // semi-implicit update for stability
-      a = netF / mass;
-      v += a * dt;
 
-      // if velocity would cross zero and gravity is insufficient, catch (stick)
-      if (v_prev * v <= 0 && F_down <= F_max) {
+      // Semi-implicit Euler for stability
+      a = netF / mass;
+      v += a*dt;
+
+      // If velocity tried to cross through zero and gravity can't overcome friction, stick.
+      // i.e., if v_prev and v have opposite signs AND F_down <= F_max, clamp to rest.
+      if (v_prev*v <= 0 && F_down <= F_max) {
         v = 0;
         a = 0;
         state = 'static (caught)';
       } else {
-        s_m += v * dt;
+        s_m += v*dt;
         state = 'sliding';
       }
     }
   }
 
-  // Clamp to track and zero-out motion at boundaries
+  // Clamp to track limits and stop cleanly
   if (s_m >= rampLengthM) { s_m = rampLengthM; v = 0; a = 0; state = 'stopped (bottom)'; }
   if (s_m <= 0)           { s_m = 0;           v = 0; a = 0; /* at top */ }
 
   return { F_down, state };
 }
 
-// ----- Render loop -----
+// Render loop
 let lastT = null;
 function renderLoop(ts){
-  if (!lastT) lastT = ts;
-  const dt = Math.min(0.03, (ts - lastT) / 1000);
+  if(!lastT) lastT = ts;
+  const dt = Math.min(0.03, (ts - lastT)/1000);
   lastT = ts;
 
-  let report = null;
-  if (!paused) report = physicsStep(dt);
+  let report;
+  if (!paused) {
+    report = physicsStep(dt);
+  }
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawRamp();
@@ -215,19 +256,21 @@ function renderLoop(ts){
   // HUD
   ctx.font = '14px Arial';
   ctx.fillStyle = '#111';
-  ctx.textAlign = 'left';
   ctx.fillText(`Mass = ${mass} kg`, 680, 40);
   ctx.fillText(`Angle = ${angleDeg}\u00B0`, 680, 64);
 
   const stateText = paused ? 'paused' : (report ? report.state : '');
-  infoEl.textContent = `s = ${s_m.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${stateText}`;
+  infoEl.textContent =
+    `s = ${s_m.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${stateText}`;
 
   requestAnimationFrame(renderLoop);
 }
 
-// ----- Init / reset -----
+// Init/reset
 function init(){
-  s_m = 0; v = 0; a = 0;
+  s_m = 0;
+  v = 0;
+  a = 0;
   paused = false;
   pauseBtn.textContent = 'Pause';
   F_max = Math.max(0, parseFloat(FmaxEl.value) || 50);
@@ -237,6 +280,7 @@ requestAnimationFrame(renderLoop);
 </script>
 </body>
 </html>
+
 
 
 
