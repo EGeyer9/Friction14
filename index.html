@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Triangle Rigidity</title>
+<title>Friction Simulation</title>
 <style>
   body{font-family:Arial,sans-serif;text-align:center;margin:10px;color:#111}
   input[type=number]{width:80px;padding:5px;border-radius:5px;border:1px solid #ccc}
@@ -13,7 +13,7 @@
 </head>
 <body>
 
-<h2>Triangle Rigidity</h2>
+<h2>Friction Simulation</h2>
 <div>
   <label>Friction max (N): <input id="Fmax" type="number" value="50" step="1"></label>
   <button id="toggleFric">Friction: ON</button>
@@ -40,7 +40,7 @@ const pixelsPerMeter = 80;
 let F_max = parseFloat(document.getElementById('Fmax').value);
 let frictionOn = true;
 let paused = false;
-let s_m = 0;
+let s_m = 0; // distance along ramp
 let v = 0;
 let a = 0;
 
@@ -61,45 +61,53 @@ const infoEl = document.getElementById('info');
 
 FmaxEl.addEventListener('input', ()=>{F_max = Math.max(0,parseFloat(FmaxEl.value)||0);});
 toggleFricBtn.addEventListener('click',()=>{frictionOn=!frictionOn; toggleFricBtn.textContent='Friction: '+(frictionOn?'ON':'OFF');});
-pauseBtn.addEventListener('click',()=>{
-  paused = !paused;
-  pauseBtn.textContent = paused ? "Resume" : "Pause";
-});
+pauseBtn.addEventListener('click',()=>{paused=!paused; pauseBtn.textContent=paused?"Resume":"Pause";});
 resetBtn.addEventListener('click',init);
 
 // Helpers
 function rampBottomPx(){return {x:topLeftPx.x+t_down.x*rampLengthM*pixelsPerMeter, y:topLeftPx.y+t_down.y*rampLengthM*pixelsPerMeter};}
 function posToCanvas(s){
-    const base = {
-        x: topLeftPx.x + t_down.x*s*pixelsPerMeter,
-        y: topLeftPx.y + t_down.y*s*pixelsPerMeter
-    };
     return {
-        x: base.x - n.x*boxSizeM*pixelsPerMeter/2,
-        y: base.y - n.y*boxSizeM*pixelsPerMeter/2
+        x: topLeftPx.x + t_down.x*s*pixelsPerMeter - n.x*boxSizeM*pixelsPerMeter/2,
+        y: topLeftPx.y + t_down.y*s*pixelsPerMeter - n.y*boxSizeM*pixelsPerMeter/2
     };
 }
 
-// Draw
+// Draw floor + ramp
 function drawRamp(){
-    const top = topLeftPx;
-    const bottom = rampBottomPx();
+    const top = topLeftPx, bottom = rampBottomPx();
 
-    // Grey baseline
-    ctx.strokeStyle = "#999";
-    ctx.lineWidth = 1.5;
+    // Floor line (extends across canvas)
+    ctx.strokeStyle="#bbb"; ctx.lineWidth=2;
     ctx.beginPath();
-    ctx.moveTo(0, bottom.y);
-    ctx.lineTo(canvas.width, bottom.y);
+    ctx.moveTo(0,rampBottomY);
+    ctx.lineTo(canvas.width,rampBottomY);
     ctx.stroke();
 
-    // Incline line
-    ctx.strokeStyle = "#ff9f1c";
-    ctx.lineWidth = 3;
+    // Ramp rectangle
+    ctx.fillStyle="#e6e6e6";
     ctx.beginPath();
-    ctx.moveTo(top.x, top.y);
-    ctx.lineTo(bottom.x, bottom.y);
+    ctx.moveTo(top.x,top.y);
+    ctx.lineTo(top.x - n.x*0.9*pixelsPerMeter, top.y - n.y*0.9*pixelsPerMeter);
+    ctx.lineTo(bottom.x - n.x*0.9*pixelsPerMeter, bottom.y - n.y*0.9*pixelsPerMeter);
+    ctx.lineTo(bottom.x,bottom.y);
+    ctx.closePath(); ctx.fill();
+
+    ctx.strokeStyle="#ff9f1c"; ctx.lineWidth=3; 
+    ctx.beginPath();
+    ctx.moveTo(top.x,top.y);
+    ctx.lineTo(bottom.x,bottom.y);
     ctx.stroke();
+
+    // Draw angle arc at bottom
+    const arcRadius = 40;
+    const bottomCorner = bottom;
+    ctx.strokeStyle="#000"; ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.arc(bottomCorner.x, bottomCorner.y, arcRadius, 0, -theta, true);
+    ctx.stroke();
+    ctx.fillStyle="#000"; ctx.font="14px Arial";
+    ctx.fillText("30°", bottomCorner.x+arcRadius+5, bottomCorner.y-5);
 }
 
 function drawBox(pos){
@@ -123,15 +131,14 @@ function physicsStep(dt){
             netF = F_down - friction;
             a = netF/mass;
             v += a*dt;
+            if(v*(v-a*dt)<0) v=0;
             s_m += v*dt;
-            if(s_m >= rampLengthM){ s_m=rampLengthM; v=0; a=0; }
-            if(s_m <= 0){ s_m=0; v=0; a=0; }
+            if(s_m>=rampLengthM){s_m=rampLengthM; v=0; a=0;}
             state='sliding';
         }
     } else {
         netF = F_down; a=netF/mass; v+=a*dt; s_m+=v*dt;
-        if(s_m >= rampLengthM){ s_m=rampLengthM; v=0; a=0; }
-        if(s_m <= 0){ s_m=0; v=0; a=0; }
+        if(s_m>=rampLengthM){s_m=rampLengthM; v=0; a=0;}
         state='no friction';
     }
     return {F_down, netF, state};
@@ -145,6 +152,8 @@ function renderLoop(ts){
 
     if(!paused){
         var forces = physicsStep(dt);
+    } else {
+        var forces = {state:"paused"};
     }
 
     ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -153,18 +162,19 @@ function renderLoop(ts){
 
     ctx.font='14px Arial'; ctx.fillStyle='#111';
     ctx.fillText(`Mass = ${mass} kg`,680,40);
-    ctx.fillText(`Angle = ${angleDeg}\u00B0`,680,64);
+    ctx.fillText(`Angle = 30°`,680,64);
 
-    infoEl.textContent = `s = ${s_m.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${forces?forces.state:"paused"}`;
+    infoEl.textContent = `s = ${s_m.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${forces.state}`;
 
     requestAnimationFrame(renderLoop);
 }
 
 // Init
-function init(){s_m=0; v=0; a=0; paused=false; pauseBtn.textContent="Pause"; F_max = Math.max(0,parseFloat(FmaxEl.value)||50);}
+function init(){s_m=0; v=0; a=0; F_max = Math.max(0,parseFloat(FmaxEl.value)||50);}
 init();
 requestAnimationFrame(renderLoop);
 </script>
 </body>
 </html>
+
 
