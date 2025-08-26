@@ -49,13 +49,7 @@ const topLeftPx = {x:100, y:rampBottomY - rampHeightPx};
 const t_down = {x: Math.cos(theta), y: Math.sin(theta)};
 let n = {x:-t_down.y, y:t_down.x};
 const nMag = Math.hypot(n.x,n.y); n.x/=nMag; n.y/=nMag;
-function posToCanvas(s){
-    // place box on the top edge of ramp
-    return {
-        x: topLeftPx.x + t_down.x*s*pixelsPerMeter + n.x*boxSizeM*pixelsPerMeter/2,
-        y: topLeftPx.y + t_down.y*s*pixelsPerMeter + n.y*boxSizeM*pixelsPerMeter/2
-    };
-}
+
 // UI
 const FmaxEl = document.getElementById('Fmax');
 const toggleFricBtn = document.getElementById('toggleFric');
@@ -69,24 +63,37 @@ resetBtn.addEventListener('click',init);
 // Helpers
 function rampBottomPx(){return {x:topLeftPx.x+t_down.x*rampLengthM*pixelsPerMeter, y:topLeftPx.y+t_down.y*rampLengthM*pixelsPerMeter};}
 function posToCanvas(s){
-    // **Subtract normal offset** so box sits on top of ramp
+    const base = {
+        x: topLeftPx.x + t_down.x*s*pixelsPerMeter,
+        y: topLeftPx.y + t_down.y*s*pixelsPerMeter
+    };
+    // Place box on top of ramp
     return {
-        x: topLeftPx.x + t_down.x*s*pixelsPerMeter - n.x*boxSizeM*pixelsPerMeter/2,
-        y: topLeftPx.y + t_down.y*s*pixelsPerMeter - n.y*boxSizeM*pixelsPerMeter/2
+        x: base.x + n.x*boxSizeM*pixelsPerMeter/2,
+        y: base.y + n.y*boxSizeM*pixelsPerMeter/2
     };
 }
 
 // Draw
 function drawRamp(){
-    const top = topLeftPx, bottom = rampBottomPx();
-    ctx.fillStyle="#e6e6e6";
+    const top = topLeftPx;
+    const bottom = rampBottomPx();
+
+    // Draw incline line
+    ctx.strokeStyle = "#ff9f1c";
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(top.x,top.y);
-    ctx.lineTo(top.x - n.x*0.9*pixelsPerMeter, top.y - n.y*0.9*pixelsPerMeter);
-    ctx.lineTo(bottom.x - n.x*0.9*pixelsPerMeter, bottom.y - n.y*0.9*pixelsPerMeter);
-    ctx.lineTo(bottom.x,bottom.y);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle="#ff9f1c"; ctx.lineWidth=3; ctx.stroke();
+    ctx.moveTo(top.x, top.y);
+    ctx.lineTo(bottom.x, bottom.y);
+    ctx.stroke();
+
+    // Draw baseline for reference
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bottom.x, bottom.y);
+    ctx.lineTo(bottom.x + 200, bottom.y);
+    ctx.stroke();
 }
 
 function drawBox(pos){
