@@ -1,1 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inclined Plane — Max Friction Demo</title>
+<style>
+  body{font-family:Arial,sans-serif;text-align:center;margin:10px;color:#111}
+  input[type=number]{width:80px;padding:5px;border-radius:5px;border:1px solid #ccc}
+  button{padding:5px 10px;margin-left:5px;border-radius:5px;border:none;background:#2b7be4;color:white}
+  canvas{border:1px solid #ccc;display:block;margin:10px auto;background:#fff}
+  .small{font-size:13px;color:#444;margin-top:6px}
+</style>
+</head>
+<body>
 
+<h2>Inclined Plane (Max Friction Force)</h2>
+<div>
+  <label>Friction max (N): <input id="Fmax" type="number" value="50" step="1"></label>
+  <button id="toggleFric">Friction: ON</button>
+  <button id="reset">Reset</button>
+</div>
+<canvas id="cv" width="900" height="500"></canvas>
+<div class="small" id="info"></div>
+
+<script>
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+
+// Constants
+const g = 9.81;
+const mass = 10;
+const angleDeg = 30;
+const theta = angleDeg*Math.PI/180;
+const boxSizeM = 0.3;
+const rampLengthM = 5;
+const pixelsPerMeter = 80;
+
+// State
+let F_max = parseFloat(document.getElementById('Fmax').value);
+let frictionOn = true;
+let s_m = 0; // start at top
+let v = 0;
+let a = 0;
+
+// Ramp geometry
+const rampBottomY = 450;
+const rampHeightPx = Math.sin(theta)*rampLengthM*pixelsPerMeter;
+const topLeftPx = {x:100, y:rampBottomY - rampHeightPx};
+const t_down = {x: Math.cos(theta), y: Math.sin(theta)};
+let n = {x:-t_down.y, y:t_down.x};
+const nMag = Math.hypot(n.x,n.y); n.x/=nMag; n.y/=nMag;
+
+// UI
+const FmaxEl = document.getElementById('Fmax');
+const toggleFricBtn = document.getElementById('toggleFric');
+const resetBtn = document.getElementById('reset');
+const infoEl = document.getElementById('info');
+
+FmaxEl.addEventListener('input', ()=>{F_max = Math.max(0,parseFloat(FmaxEl.value)||0);});
+toggleFricBtn.addEventListener('click',()=>{frictionOn=!frictionOn; toggleFricBtn.textContent='Friction: '+(frictionOn?'ON':'OFF');});
+resetBtn.addEventListener('click',init);
+
+// Helpers
+function rampBottomPx(){return {x:topLeftPx.x+t_down.x*rampLengthM*pixelsPerMeter, y:topLeftPx.y+t_down.y*rampLengthM*pixelsPerMeter};}
+function posToCanvas(s){
+    // **Subtract normal offset** so box sits on top of ramp
+    return {
+        x: topLeftPx.x + t_down.x*s*pixelsPerMeter - n.x*boxSizeM*pixelsPerMeter/2,
+        y: topLeftPx.y + t_down.y*s*pixelsPerMeter - n.y*boxSizeM*pixelsPerMeter/2
+    };
+}
+
+// Draw
+function drawRamp(){
+    const top = topLeftPx, bottom = rampBottomPx();
+    ctx.fillStyle="#e6e6e6";
+    ctx.beginPath();
+    ctx.moveTo(top.x,top.y);
+    ctx.lineTo(top.x - n.x*0.9*pixelsPerMeter, top.y - n.y*0.9*pixelsPerMeter);
+    ctx.lineTo(bottom.x - n.x*0.9*pixelsPerMeter, bottom.y - n.y*0.9*pixelsPerMeter);
+    ctx.lineTo(bottom.x,bottom.y);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle="#ff9f1c"; ctx.lineWidth=3; ctx.stroke();
+}
+
+function drawBox(pos){
+    const ang = Math.atan2(t_down.y,t_down.x);
+    ctx.save(); ctx.translate(pos.x,pos.y); ctx.rotate(ang);
+    const sizePx = boxSizeM*pixelsPerMeter;
+    ctx.fillStyle="#1f66ff"; ctx.fillRect(-sizePx/2,-sizePx/2,sizePx,sizePx);
+    ctx.strokeStyle="#072b5b"; ctx.lineWidth=1.5; ctx.strokeRect(-sizePx/2,-sizePx/2,sizePx,sizePx);
+    ctx.restore();
+}
+
+// Physics
+function physicsStep(dt){
+    const F_down = mass*g*Math.sin(theta);
+    let netF, state;
+    if(frictionOn){
+        if(F_down <= F_max && Math.abs(v)<1e-6){
+            a=0; v=0; netF=0; state='static (stays)';
+        } else {
+            const friction = F_max*Math.sign(v||F_down);
+            netF = F_down - friction;
+            a = netF/mass;
+            v += a*dt;
+            if(v*(v-a*dt)<0)v=0;
+            s_m += v*dt;
+            s_m = Math.max(0, Math.min(rampLengthM,s_m));
+            state='sliding';
+        }
+    } else {
+        netF = F_down; a=netF/mass; v+=a*dt; s_m+=v*dt; s_m = Math.min(rampLengthM, Math.max(0,s_m)); state='no friction';
+    }
+    return {F_down, netF, state};
+}
+
+// Render
+let lastT=null;
+function renderLoop(ts){
+    if(!lastT) lastT=ts;
+    const dt = Math.min(0.03,(ts-lastT)/1000); lastT=ts;
+
+    const forces = physicsStep(dt);
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawRamp();
+    drawBox(posToCanvas(s_m));
+
+    ctx.font='14px Arial'; ctx.fillStyle='#111';
+    ctx.fillText(`Mass = ${mass} kg`,680,40);
+    ctx.fillText(`Angle = ${angleDeg}°`,680,64);
+    ctx.fillText(`F_max = ${F_max.toFixed(1)} N`,680,88);
+    infoEl.textContent = `s = ${s_m.toFixed(3)} m | v = ${v.toFixed(3)} m/s | a = ${a.toFixed(3)} m/s² | State: ${forces.state}`;
+
+    requestAnimationFrame(renderLoop);
+}
+
+// Init
+function init(){s_m=0; v=0; a=0; F_max = Math.max(0,parseFloat(FmaxEl.value)||50);}
+init();
+requestAnimationFrame(renderLoop);
+</script>
+</body>
+</html>
